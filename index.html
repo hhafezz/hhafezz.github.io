@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Apartment 3D</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#f1efe9;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+canvas{display:block}
+#bar{position:fixed;z-index:10;left:14px;top:14px;display:flex;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 28px)}
+button{border:0;border-radius:10px;padding:9px 12px;background:rgba(25,25,25,.88);color:#fff;font-weight:700;cursor:pointer}
+button:hover{background:#000}
+#badge{position:fixed;z-index:9;right:14px;top:14px;background:rgba(255,255,255,.92);padding:9px 12px;border-radius:10px;font-weight:800;box-shadow:0 4px 18px #0002}
+#tip{position:fixed;z-index:9;left:14px;bottom:14px;background:rgba(255,255,255,.92);padding:9px 11px;border-radius:10px;font-size:12px;line-height:1.35;box-shadow:0 4px 18px #0002}
+#cross{position:fixed;z-index:8;left:50%;top:50%;transform:translate(-50%,-50%);font-size:22px;color:#fff;text-shadow:0 1px 4px #000;display:none;pointer-events:none}
+@media(max-width:680px){#badge{display:none}#tip{font-size:11px;max-width:68vw}button{font-size:12px;padding:8px 10px}}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.180.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.180.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="bar">
+<button id="doll">Dollhouse</button>
+<button id="top">Top view</button>
+<button id="walkBtn">Walk inside</button>
+<button id="labelsBtn">Labels</button>
+<button id="reset">Reset</button>
+</div>
+<div id="badge">Apartment 3D · draft from supplied floor plan</div>
+<div id="tip">Drag to rotate · wheel/pinch to zoom<br>Walk: click scene, then WASD / arrows · Esc exits</div>
+<div id="cross">+</div>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {PointerLockControls} from 'three/addons/controls/PointerLockControls.js';
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0xf1efe9);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.05,100);
+camera.position.set(10,11,13);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x777777,2.0));
+const sun=new THREE.DirectionalLight(0xffffff,2.8);
+sun.position.set(8,14,7); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-12;sun.shadow.camera.right=12;sun.shadow.camera.top=12;sun.shadow.camera.bottom=-12;
+scene.add(sun);
+
+const orbit=new OrbitControls(camera,renderer.domElement);
+orbit.enableDamping=true; orbit.target.set(0,.7,0); orbit.minDistance=3.5; orbit.maxDistance=28;
+orbit.maxPolarAngle=Math.PI/2.03;
+
+const walk=new PointerLockControls(camera,document.body);
+const keys={}; let walking=false; let labelsVisible=true;
+addEventListener('keydown',e=>keys[e.code]=true);
+addEventListener('keyup',e=>keys[e.code]=false);
+walk.addEventListener('lock',()=>document.getElementById('cross').style.display='block');
+walk.addEventListener('unlock',()=>{document.getElementById('cross').style.display='none'; walking=false; orbit.enabled=true;});
+
+const A=new THREE.Group(); scene.add(A);
+const WALL_H=2.75, WT=.14;
+const M={
+ wall:new THREE.MeshStandardMaterial({color:0xf4f0e7,roughness:.95}),
+ outer:new THREE.MeshStandardMaterial({color:0x4a4a47,roughness:.9}),
+ wood:new THREE.MeshStandardMaterial({color:0xb78d62,roughness:.82}),
+ floor:new THREE.MeshStandardMaterial({color:0xd9bd97,roughness:.95}),
+ tile:new THREE.MeshStandardMaterial({color:0xd6d5d1,roughness:.95}),
+ white:new THREE.MeshStandardMaterial({color:0xf5f3ef,roughness:.9}),
+ dark:new THREE.MeshStandardMaterial({color:0x55504a,roughness:.85}),
+ green:new THREE.MeshStandardMaterial({color:0x71856c,roughness:.95}),
+ glass:new THREE.MeshStandardMaterial({color:0x9bc9dc,transparent:true,opacity:.42,roughness:.2})
+};
+
+function bx(name,x,z,w,d,h,mat=M.wall,y=h/2){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+  m.name=name;m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;A.add(m);return m;
+}
+function fl(x,z,w,d,mat=M.floor){return bx('floor',x,z,w,d,.06,mat,.03)}
+function wx(x,z,len,outer=false){return bx('wall',x,z,len,WT,WALL_H,outer?M.outer:M.wall)}
+function wz(x,z,len,outer=false){return bx('wall',x,z,WT,len,WALL_H,outer?M.outer:M.wall)}
+function door(x,z,rot=0,w=.86){const d=bx('door',x,z,w,.055,2.05,M.wood,1.025);d.rotation.y=rot;return d}
+function winX(x,z,w){return bx('window',x,z,w,.045,1.12,M.glass,1.45)}
+function winZ(x,z,w){return bx('window',x,z,.045,w,1.12,M.glass,1.45)}
+const labelGroup=new THREE.Group(); A.add(labelGroup);
+function label(t,x,z,s=2.2){
+ const c=document.createElement('canvas');c.width=512;c.height=128;const g=c.getContext('2d');
+ g.fillStyle='#222';g.font='700 44px system-ui';g.textAlign='center';g.textBaseline='middle';g.fillText(t,256,64);
+ const tex=new THREE.CanvasTexture(c);tex.colorSpace=THREE.SRGBColorSpace;
+ const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
+ sp.position.set(x,.10,z);sp.scale.set(s,.55,1);sp.material.rotation=0;labelGroup.add(sp);
+}
+
+// Approximate reconstruction from the supplied plan. Dimensions shown in the drawing are used where legible.
+// Floors
+fl(-2.25,-1.28,3.55,3.30);      // bedroom 1
+fl(-1.85,2.05,3.40,3.50);       // bedroom 2
+fl(2.15,.18,3.40,5.00);         // living
+fl(2.15,-3.12,3.40,1.80,M.tile);// kitchen
+fl(-1.85,-3.12,2.55,1.80,M.tile);// bathroom
+fl(0,-.40,1.08,5.50);           // corridor
+
+// Outer walls
+wx(-2.25,-2.93,3.55,true); wz(-4.025,-1.28,3.30,true); wx(-2.25,.37,3.55,true);
+wz(-3.55,2.05,3.50,true); wx(-1.85,3.80,3.40,true);
+wz(3.85,.18,5.00,true); wx(2.15,2.68,3.40,true);
+wx(2.15,-4.02,3.40,true); wz(3.85,-3.12,1.80,true);
+wx(-1.85,-4.02,2.55,true); wz(-3.125,-3.12,1.80,true);
+
+// Interior partitions, with deliberate doorway gaps
+wz(-.475,-1.95,1.38); wz(-.475,-.30,.82);
+wz(.54,-1.72,1.82); wz(.54,.63,2.02);
+wx(-2.18,.37,2.72);
+wx(2.18,-2.22,2.55);
+wz(-.575,2.10,3.40);
+wz(-.575,-3.12,1.80); wz(.575,-3.12,1.80);
+
+// Door leaves as visual cues
+door(-.72,-2.37,-.68); door(.78,-2.40,.66);
+door(-.78,-.06,-.72); door(-.18,.50,-.78); door(3.46,-1.82,.66);
+
+// Windows
+winX(-2.25,-2.96,1.15); winX(-1.85,3.76,1.55); winX(2.15,2.64,1.75);
+winX(2.15,-3.98,1.10); winZ(3.81,.35,1.05);
+
+// Furniture
+function bed(x,z,w=1.58,d=2.0){
+ bx('bed',x,z,w,d,.34,M.white,.20);
+ bx('head',x,z-d*.46,w,.10,.86,M.wood,.48);
+ bx('blanket',x,z+.25,w*.92,d*.44,.08,M.green,.40);
+ bx('pillow',x-.35,z-.64,.58,.32,.12,M.white,.43); bx('pillow',x+.35,z-.64,.58,.32,.12,M.white,.43);
+}
+function sofa(x,z){
+ bx('sofa',x,z,1.95,.82,.45,M.white,.24);
+ bx('sofaBack',x,z-.34,1.95,.16,.88,M.white,.47);
+}
+function wardrobe(x,z,w=1.8,d=.45){bx('wardrobe',x,z,w,d,2.15,M.wood,1.075)}
+function counter(x,z,w,d=.58){bx('counter',x,z,w,d,.88,M.wood,.44);bx('top',x,z,w+.02,d+.02,.06,M.white,.91)}
+function plant(x,z){bx('plantPot',x,z,.28,.28,.24,M.dark,.12);bx('plant',x,z,.48,.48,.34,M.green,.42)}
+
+bed(-2.30,-1.18); wardrobe(-3.72,-1.20,.45,2.15);
+bed(-1.75,2.10); wardrobe(-3.28,2.08,.42,2.25);
+sofa(2.02,.40); bx('coffee',2.90,.40,.78,.58,.38,M.wood,.19); bx('tv',3.61,.35,.10,1.55,1.02,M.dark,.78);
+plant(3.35,1.85); plant(3.32,-.65);
+
+// Kitchen / bath blocks
+counter(1.55,-3.70,2.05); counter(3.47,-3.12,.58,1.45);
+bx('stove',3.46,-3.52,.50,.50,.06,M.dark,.94); bx('sink',1.85,-3.70,.62,.38,.05,M.dark,.95);
+bx('shower',-2.55,-3.55,.75,.75,.10,M.white,.08); bx('toilet',-2.05,-2.78,.45,.65,.48,M.white,.25); bx('basin',-1.00,-2.78,.48,.42,.82,M.white,.41);
+
+// labels
+label('Bedroom',-2.28,-1.35); label('Bedroom',-1.85,2.05); label('Living room',2.15,.15,2.8);
+label('Kitchen',2.15,-3.15); label('Bathroom',-1.85,-3.15); label('1.08 m',0,-.35,1.2);
+
+// perimeter ground
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(40,40),new THREE.MeshStandardMaterial({color:0xe9e6df,roughness:1}));
+ground.rotation.x=-Math.PI/2;ground.position.y=-.03;ground.receiveShadow=true;scene.add(ground);
+
+function setView(pos,target){
+ walking=false;if(walk.isLocked)walk.unlock();orbit.enabled=true;camera.up.set(0,1,0);
+ camera.position.copy(pos);orbit.target.copy(target);orbit.update();
+}
+document.getElementById('doll').onclick=()=>setView(new THREE.Vector3(9.5,10.5,12),new THREE.Vector3(0,.5,-.2));
+document.getElementById('top').onclick=()=>setView(new THREE.Vector3(0,15,.01),new THREE.Vector3(0,0,0));
+document.getElementById('reset').onclick=()=>setView(new THREE.Vector3(10,11,13),new THREE.Vector3(0,.7,0));
+document.getElementById('labelsBtn').onclick=()=>{labelsVisible=!labelsVisible;labelGroup.visible=labelsVisible};
+document.getElementById('walkBtn').onclick=()=>{
+ walking=true;orbit.enabled=false;camera.position.set(0,1.65,1.1);camera.lookAt(0,1.65,-2.3);walk.lock();
+};
+
+const clock=new THREE.Clock();
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),.04);
+ if(walking&&walk.isLocked){
+   const speed=2.0*dt;
+   if(keys.KeyW||keys.ArrowUp)walk.moveForward(speed);
+   if(keys.KeyS||keys.ArrowDown)walk.moveForward(-speed);
+   if(keys.KeyA||keys.ArrowLeft)walk.moveRight(-speed);
+   if(keys.KeyD||keys.ArrowRight)walk.moveRight(speed);
+   camera.position.y=1.65;
+ }
+ orbit.update();renderer.render(scene,camera);
+}
+animate();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body>
+</html>
